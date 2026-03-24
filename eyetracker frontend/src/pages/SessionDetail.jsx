@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getSessionById, deleteSession } from '../store/sessions'
+import { getStimuliForSession } from '../store/stimuli'
 import { format } from 'date-fns'
 
 const PHASES = [
@@ -16,11 +17,14 @@ export default function SessionDetail() {
   const navigate = useNavigate()
   const [session, setSession] = useState(null)
   const [notFound, setNotFound] = useState(false)
+  const [stimuliCount, setStimuliCount] = useState(0)
 
   useEffect(() => {
     const s = getSessionById(id)
-    if (s) setSession(s)
-    else setNotFound(true)
+    if (s) {
+      setSession(s)
+      setStimuliCount(getStimuliForSession(id).length)
+    } else setNotFound(true)
   }, [id])
 
   const handleDelete = () => {
@@ -31,7 +35,8 @@ export default function SessionDetail() {
   }
 
   // Determine current phase
-  const currentPhase = session?.csv_uploaded ? 3 : 1
+  const hasStimuli = stimuliCount > 0 || session?.stimulus_loaded
+  const currentPhase = session?.csv_uploaded ? 3 : hasStimuli ? 2 : 1
 
   if (notFound) {
     return (
@@ -117,6 +122,12 @@ export default function SessionDetail() {
                 <span className="detail-field-label">Stimulus Type</span>
                 <span className={`type-badge ${session.stimulus_type}`}>
                   {session.stimulus_type}
+                </span>
+              </div>
+              <div className="detail-field">
+                <span className="detail-field-label">Stimuli Loaded</span>
+                <span className="detail-field-value">
+                  {stimuliCount > 0 ? `${stimuliCount} added` : 'None yet'}
                 </span>
               </div>
               <div className="detail-field">
@@ -207,11 +218,25 @@ export default function SessionDetail() {
                     Load your stimulus in the viewer, then run the recording in GP3HD software.
                   </p>
                   <button
-                    className="btn btn-ghost"
+                    className="btn btn-primary"
                     style={{ width: '100%', justifyContent: 'center' }}
-                    title="Stimulus viewer coming in Phase 2"
+                    onClick={() => navigate(`/sessions/${id}/stimuli`)}
                   >
                     Open Stimulus Viewer →
+                  </button>
+                </>
+              )}
+              {currentPhase === 2 && (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 12 }}>
+                    Stimulus is loaded. Proceed with GP3HD recording and export the CSV when done.
+                  </p>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={() => navigate(`/sessions/${id}/stimuli`)}
+                  >
+                    Review Stimuli →
                   </button>
                 </>
               )}

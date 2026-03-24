@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import NewSession from './pages/NewSession'
 import SessionDetail from './pages/SessionDetail'
+import StimulusViewer from './pages/StimulusViewer'
 import './index.css'
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/sessions/new" element={<NewSession />} />
         <Route path="/sessions/:id" element={<SessionDetail />} />
+        <Route path="/sessions/:id/stimuli" element={<StimulusViewer />} />
       </Routes>
     </BrowserRouter>
   )

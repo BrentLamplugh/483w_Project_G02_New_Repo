@@ -55,6 +55,8 @@ export default function NewSession() {
       notes: form.notes.trim(),
       date: new Date().toISOString(),
       csv_uploaded: false,
+      stimulus_loaded: false,
+      stimuli_count: 0,
     }
 
     saveSession(session)
