@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getSessionById, deleteSession, updateSession } from '../store/sessions'
 import { getStimuliForSession } from '../store/stimuli'
-import { getGazSummary, saveGazSummary, deleteGazSummary, parseGP3HDCsv } from '../store/gazdata'
+import { getGazSummary, saveGazSummary, deleteGazSummary } from '../store/gazdata'
 import { format } from 'date-fns'
 
 const PHASES = [
@@ -38,19 +38,6 @@ function StatTile({ label, value, unit, accent }) {
         {unit && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4, fontWeight: 400 }}>{unit}</span>}
       </span>
     </div>
-  )
-}
-
-function GazeDot({ x, y }) {
-  // x and y are 0–1 ratios from GP3HD
-  return (
-    <circle
-      cx={`${x * 100}%`}
-      cy={`${y * 100}%`}
-      r="2"
-      fill="var(--accent)"
-      opacity="0.35"
-    />
   )
 }
 
@@ -92,9 +79,9 @@ export default function SessionDetail() {
   const csvUploaded = session?.csv_uploaded || false
   const currentPhase = csvUploaded ? 3 : hasStimuli ? 2 : 1
 
-  // ── CSV handler ──────────────────────────────────────────────────────────
+  // ── CSV handler — sends file to Flask backend ────────────────────────────
 
-  const handleCsvUpload = (e) => {
+  const handleCsvUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -108,27 +95,58 @@ export default function SessionDetail() {
     setCsvUploading(true)
     setCsvFilename(file.name)
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const summary = parseGP3HDCsv(id, reader.result)
-        saveGazSummary(summary)
-        setGazSummary(summary)
+    const formData = new FormData()
+    formData.append('file', file) // 'file' must match request.files['file'] in Flask
 
-        const updated = updateSession(id, { csv_uploaded: true, csv_filename: file.name })
-        setSession(updated)
-        setCsvUploading(false)
-      } catch (err) {
-        setCsvError(err.message || 'Failed to parse CSV. Check the file format.')
-        setCsvUploading(false)
+    try {
+      const response = await fetch('http://localhost:5000/upload', {
+        method: 'POST',
+        body: formData,
+        // Do NOT set Content-Type header — browser sets it automatically with boundary
+      })
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || `Server returned ${response.status}`)
       }
-    }
-    reader.onerror = () => {
-      setCsvError('Failed to read the file.')
+
+      const data = await response.json()
+      // data contains: heatmap, scanpath, fixation_map (and whatever else Flask returns)
+
+      // Build a summary object to save locally so the UI can display stats
+      const summary = {
+        session_id: id,
+        uploaded_at: new Date().toISOString(),
+        row_count: data.row_count ?? null,
+        duration_sec: data.duration_sec ?? null,
+        sample_rate_hz: data.sample_rate_hz ?? null,
+        fixation_count: data.fixation_count ?? null,
+        avg_fixation_duration_sec: data.avg_fixation_duration_sec ?? null,
+        blink_count: data.blink_count ?? null,
+        avg_blink_duration_sec: data.avg_blink_duration_sec ?? null,
+        avg_pupil_left_mm: data.avg_pupil_left_mm ?? null,
+        avg_pupil_right_mm: data.avg_pupil_right_mm ?? null,
+        gaze_points: data.gaze_points ?? [],       // array of [x, y] for scatter plot
+        headers: data.headers ?? [],               // column names for preview table
+        preview_rows: data.preview_rows ?? [],     // first 8 rows for preview table
+        detected_cols: data.detected_cols ?? {},   // detected column mapping
+        // Full parsed data from Flask
+        heatmap: data.heatmap ?? [],
+        scanpath: data.scanpath ?? [],
+        fixation_map: data.fixation_map ?? [],
+      }
+
+      saveGazSummary(summary)
+      setGazSummary(summary)
+
+      const updated = updateSession(id, { csv_uploaded: true, csv_filename: file.name })
+      setSession(updated)
+    } catch (err) {
+      setCsvError(err.message || 'Failed to upload. Make sure the Flask server is running on port 5000.')
+    } finally {
       setCsvUploading(false)
+      e.target.value = ''
     }
-    reader.readAsText(file)
-    e.target.value = ''
   }
 
   const handleRemoveCsv = () => {
@@ -265,7 +283,7 @@ export default function SessionDetail() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <p style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.7 }}>
                     Export the CSV from GP3HD software (File → Export Data), then upload it here.
-                    All parsing happens locally in your browser.
+                    The file will be sent to the analysis server for processing.
                   </p>
 
                   <input
@@ -285,7 +303,7 @@ export default function SessionDetail() {
                     {csvUploading ? (
                       <>
                         <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>↻</span>
-                        Parsing…
+                        Uploading & Parsing…
                       </>
                     ) : (
                       <>↑ Upload GP3HD CSV</>
@@ -307,7 +325,7 @@ export default function SessionDetail() {
                   )}
 
                   <p style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
-                    Supports GP3HD format · parsed entirely in-browser
+                    Supports GP3HD format · parsed by Flask backend
                   </p>
                 </div>
               ) : (
@@ -340,7 +358,7 @@ export default function SessionDetail() {
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>Samples</span>
                         <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>
-                          {gazSummary.row_count.toLocaleString()}
+                          {gazSummary.row_count != null ? gazSummary.row_count.toLocaleString() : '—'}
                         </span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -483,36 +501,38 @@ export default function SessionDetail() {
                 </div>
 
                 {/* Detected columns info */}
-                <div style={{
-                  background: 'var(--bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  padding: '10px 12px',
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                  fontFamily: 'var(--mono)',
-                  lineHeight: 1.8,
-                }}>
-                  <span style={{ color: 'var(--text-dim)' }}>Detected columns: </span>
-                  {Object.entries(gazSummary.detected_cols)
-                    .filter(([, v]) => v !== null)
-                    .map(([k, v]) => (
-                      <span key={k} style={{
-                        display: 'inline-block',
-                        background: 'var(--surface2)',
-                        border: '1px solid var(--border2)',
-                        borderRadius: 3,
-                        padding: '1px 6px',
-                        marginRight: 4,
-                        marginBottom: 2,
-                        color: 'var(--accent)',
-                        fontSize: 10,
-                      }}>
-                        {v}
-                      </span>
-                    ))
-                  }
-                </div>
+                {gazSummary.detected_cols && Object.keys(gazSummary.detected_cols).length > 0 && (
+                  <div style={{
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    padding: '10px 12px',
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--mono)',
+                    lineHeight: 1.8,
+                  }}>
+                    <span style={{ color: 'var(--text-dim)' }}>Detected columns: </span>
+                    {Object.entries(gazSummary.detected_cols)
+                      .filter(([, v]) => v !== null)
+                      .map(([k, v]) => (
+                        <span key={k} style={{
+                          display: 'inline-block',
+                          background: 'var(--surface2)',
+                          border: '1px solid var(--border2)',
+                          borderRadius: 3,
+                          padding: '1px 6px',
+                          marginRight: 4,
+                          marginBottom: 2,
+                          color: 'var(--accent)',
+                          fontSize: 10,
+                        }}>
+                          {v}
+                        </span>
+                      ))
+                    }
+                  </div>
+                )}
               </div>
             )}
 
@@ -527,11 +547,8 @@ export default function SessionDetail() {
                     preserveAspectRatio="xMidYMid meet"
                     style={{ display: 'block' }}
                   >
-                    {/* Screen boundary */}
                     <rect x="0" y="0" width="1" height="0.75" fill="#0b0e14" />
                     <rect x="0" y="0" width="1" height="0.75" fill="none" stroke="var(--border2)" strokeWidth="0.005" />
-
-                    {/* Gaze points */}
                     {gazSummary.gaze_points.map(([x, y], i) => (
                       <circle
                         key={i}
