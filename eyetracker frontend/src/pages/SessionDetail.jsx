@@ -53,12 +53,15 @@ export default function SessionDetail() {
   const [csvFilename, setCsvFilename] = useState('')
   const [showPreview, setShowPreview] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [stimuli, setStimuli] = useState([])
 
   useEffect(() => {
     const s = getSessionById(id)
     if (s) {
       setSession(s)
-      setStimuliCount(getStimuliForSession(id).length)
+      const stims = getStimuliForSession(id)
+      setStimuli(stims)
+      setStimuliCount(stims.length)
       const gaz = getGazSummary(id)
       if (gaz) setGazSummary(gaz)
     } else {
@@ -248,6 +251,75 @@ export default function SessionDetail() {
                 </div>
               )}
             </div>
+
+            {/* Stimulus preview inline */}
+            {stimuli.length > 0 && (
+              <div className="card detail-section" style={{ marginBottom: 16 }}>
+                <div className="detail-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Stimulus Preview</span>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, padding: '6px 10px' }}
+                    onClick={() => navigate(`/sessions/${id}/stimuli`)}
+                  >
+                    Open Viewer →
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <div>
+                    <div className={`type-badge ${stimuli[0].type}`} style={{ marginBottom: 8 }}>
+                      {stimuli[0].type}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>
+                      {stimuli[0].name}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {format(new Date(stimuli[0].created_at), 'MMM d | h:mm a')}
+                    </div>
+                  </div>
+                  <div style={{
+                    flex: 1,
+                    background: 'var(--surface2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: 10,
+                    minHeight: 120,
+                    maxHeight: 240,
+                    overflow: 'hidden',
+                  }}>
+                    {stimuli[0].type === 'image' ? (
+                      <img
+                        src={stimuli[0].src}
+                        alt={stimuli[0].name}
+                        style={{
+                          width: '100%',
+                          maxHeight: 220,
+                          objectFit: 'contain',
+                          borderRadius: 6,
+                          display: 'block',
+                        }}
+                      />
+                    ) : (
+                      <pre style={{
+                        margin: 0,
+                        background: '#0b0e14',
+                        color: '#e2e8f5',
+                        fontFamily: 'var(--mono)',
+                        fontSize: 11,
+                        lineHeight: 1.4,
+                        padding: 10,
+                        borderRadius: 6,
+                        maxHeight: 220,
+                        overflow: 'auto',
+                        border: '1px solid var(--border2)',
+                      }}>
+                        {stimuli[0].content}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="card" style={csvUploaded ? { borderColor: 'var(--accent-dim)' } : {}}>
               <div className="detail-section-title">Phase 3 - GP3HD Data Import</div>

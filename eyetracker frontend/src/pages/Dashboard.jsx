@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getSessions } from '../store/sessions'
@@ -9,7 +10,9 @@ export default function Dashboard() {
   const [filter, setFilter] = useState('all')
 
   useEffect(() => {
+    // Load once on mount
     setSessions(getSessions())
+    // No subscriptions yet; if we add a storage listener later, update here.
   }, [])
 
   const filtered = filter === 'all'
