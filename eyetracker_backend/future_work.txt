@@ -1,0 +1,35 @@
+Improvements to Backend:
+
+Answer User Story: "As a researcher, I want a data visualization tool so that I can read and interpret exported CSV files."
+
+1. New statements to request csv files from the frontend:
+
+@app.route('/upload', methods=['POST'])
+def parse_csv():
+    file = request.files['file']  # 'file' must match the key from frontend
+    df = pd.read_csv(io.BytesIO(file.read()))  # read directly from memory, no temp file needed
+
+2. Expansion of data parsing
+    - Area of Interest (AOI) data
+    - Standalone Fixation Durations
+
+General future features for Data Visualization:
+
+These additions will be incoorporated into the Frontend portion of the web application
+
+1. Heatmaps
+- overlay gaze density on the image/code area
+
+2. Scanpaths
+- show eye movement order
+- number the sequence
+
+3. Fixation view
+- show fixation points and durations
+
+4. AOI view
+- show named regions
+- total time per AOI
+- fixation count per AOI
+
+With these improvements, researchers will be able to map the parsed visual data over the stimuli for easy viewing. 
