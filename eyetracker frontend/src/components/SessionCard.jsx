@@ -3,6 +3,7 @@ import { format } from 'date-fns'
 
 export default function SessionCard({ session }) {
   const navigate = useNavigate()
+  const description = session.notes?.trim() || session.description?.trim() || ''
 
   const typeColors = {
     image: 'image',
@@ -27,10 +28,12 @@ export default function SessionCard({ session }) {
         {session.participant_name}
         {session.participant_id && (
           <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
-            · {session.participant_id}
+            | {session.participant_id}
           </span>
         )}
       </div>
+
+      {description && <div className="session-description">{description}</div>}
 
       <div className="session-meta">
         <div className="meta-item">
