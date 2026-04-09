@@ -10,7 +10,7 @@ const PHASES = [
   { num: 2, label: 'Stimulus loaded' },
   { num: 3, label: 'CSV uploaded' },
   { num: 4, label: 'Data processed' },
-  { num: 5, label: 'Results ready' },
+  { num: 5, label: 'Visualizations ready' },
 ]
 
 function StatTile({ label, value, unit, accent }) {
@@ -71,7 +71,8 @@ export default function SessionDetail() {
 
   const hasStimuli = stimuliCount > 0 || session?.stimulus_loaded
   const csvUploaded = session?.csv_uploaded || false
-  const currentPhase = csvUploaded ? 3 : hasStimuli ? 2 : 1
+  const dataProcessed = csvUploaded && gazSummary !== null
+  const currentPhase = dataProcessed ? 4 : csvUploaded ? 3 : hasStimuli ? 2 : 1
 
   const handleCsvUpload = async (e) => {
     const file = e.target.files?.[0]
@@ -121,6 +122,7 @@ export default function SessionDetail() {
         heatmap: data.heatmap ?? [],
         scanpath: data.scanpath ?? [],
         fixation_map: data.fixation_map ?? [],
+        summary: data.summary ?? [],
       }
 
       saveGazSummary(summary)
@@ -656,10 +658,24 @@ export default function SessionDetail() {
                   <button
                     className="btn btn-primary"
                     style={{ width: '100%', justifyContent: 'center' }}
-                    title="Analysis coming in Phase 4"
-                    disabled
+                    onClick={() => navigate(`/sessions/${id}/analysis`)}
                   >
-                    Run Analysis (Phase 4)
+                    View Analysis &amp; Visualizations →
+                  </button>
+                </>
+              )}
+
+              {currentPhase === 4 && (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 12 }}>
+                    Data is processed. View heatmaps, scanpath, fixations, AOIs, and the plain-English summary.
+                  </p>
+                  <button
+                    className="btn btn-primary"
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={() => navigate(`/sessions/${id}/analysis`)}
+                  >
+                    Open Visualizations →
                   </button>
                 </>
               )}

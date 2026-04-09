@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import NewSession from './pages/NewSession'
 import SessionDetail from './pages/SessionDetail'
 import StimulusViewer from './pages/StimulusViewer'
+import AnalysisView from './pages/AnalysisView'
 import './index.css'
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/sessions/new" element={<NewSession />} />
         <Route path="/sessions/:id" element={<SessionDetail />} />
         <Route path="/sessions/:id/stimuli" element={<StimulusViewer />} />
+        <Route path="/sessions/:id/analysis" element={<AnalysisView />} />
       </Routes>
     </BrowserRouter>
   )
