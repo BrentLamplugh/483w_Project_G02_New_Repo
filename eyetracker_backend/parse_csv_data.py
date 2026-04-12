@@ -4,29 +4,12 @@ from flask import Flask, jsonify, request
 import pandas as pd
 import io
 
-# Answer User Story: "As a researcher, I want to export eye-tracking data as a CSV file so that it can be used in external analysis tools."
-
-""" 
-Parsing Flow:
-
-In Python file:
-1. Read the csv file from React into a pandas DataFrame
-2. Parse the DataFrame 
-    - Make seperate dfs for each type of data structrue (Heatmap, Scanpath, Fiaxtion Map)
-3. Use jsonify to convert the parsed DataFrames into JSON format
-
-In React:
-1. Use the JSON data to create the visualizations (Heatmap, Scanpath, Fiaxtion Map, Fixation Durations, and AOIs)
- - parse function returns the JSON files 
-"""
-
-# Flask app setup - Temporary
+# Flask app setup
 app = Flask(__name__)
 @app.route('/upload', methods=['POST'])
 
 def parse_csv():
 
-    # read the csv file into a pandas DataFrame - TEMPORARY
     file = request.files['file']  # 'file' must match the key from frontend
     df = pd.read_csv(io.BytesIO(file.read()))  # read directly from memory, no temp file needed
 
@@ -56,22 +39,6 @@ def parse_csv():
         "scanpath": sp_df.to_dict(orient='records'),
         "fixation_map": fm_df.to_dict(orient='records')
     })
-
-
-"""
-Converted JSON file
-
-{
-  "heatmap": [
-    { "x": 0.45, "y": 0.32 },
-    { "x": 0.46, "y": 0.33 }
-  ],
-  "fixations": [
-    { "x": 0.50, "y": 0.40, "duration": 0.320, "id": 1 },
-    { "x": 0.61, "y": 0.55, "duration": 0.180, "id": 2 }
-  ]
-}
-"""
 
 
 # Test the Flask app
