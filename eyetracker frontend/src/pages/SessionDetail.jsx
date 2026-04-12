@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getSessionById, deleteSession, updateSession } from '../store/sessions'
-import { getStimuliForSession } from '../store/stimuli'
-import { getGazSummary, saveGazSummary, deleteGazSummary } from '../store/gazdata'
+import { getStimuliForSession, deleteStimuliForSession } from '../store/stimuli'
+import { getGazSummary, deleteGazSummary } from '../store/gazdata'
+import { showToast } from '../store/toast'
 import { format } from 'date-fns'
 
 const PHASES = [
@@ -42,17 +44,11 @@ function StatTile({ label, value, unit, accent }) {
 export default function SessionDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const fileInputRef = useRef(null)
 
   const [session, setSession] = useState(null)
   const [notFound, setNotFound] = useState(false)
   const [stimuliCount, setStimuliCount] = useState(0)
   const [gazSummary, setGazSummary] = useState(null)
-  const [csvUploading, setCsvUploading] = useState(false)
-  const [csvError, setCsvError] = useState('')
-  const [csvFilename, setCsvFilename] = useState('')
-  const [showPreview, setShowPreview] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [stimuli, setStimuli] = useState([])
 
   useEffect(() => {
@@ -62,8 +58,7 @@ export default function SessionDetail() {
       const stims = getStimuliForSession(id)
       setStimuli(stims)
       setStimuliCount(stims.length)
-      const gaz = getGazSummary(id)
-      if (gaz) setGazSummary(gaz)
+      setGazSummary(getGazSummary(id))
     } else {
       setNotFound(true)
     }
@@ -72,86 +67,44 @@ export default function SessionDetail() {
   const hasStimuli = stimuliCount > 0 || session?.stimulus_loaded
   const csvUploaded = session?.csv_uploaded || false
   const dataProcessed = csvUploaded && gazSummary !== null
-  const currentPhase = dataProcessed ? 4 : csvUploaded ? 3 : hasStimuli ? 2 : 1
-
-  const handleCsvUpload = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (!file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv' && file.type !== 'text/plain') {
-      setCsvError('Please select a .csv file exported from GP3HD or compatible eye-tracker software.')
-      e.target.value = ''
-      return
-    }
-
-    setCsvError('')
-    setCsvUploading(true)
-    setCsvFilename(file.name)
-
-    const formData = new FormData()
-    formData.append('file', file)
-
-    try {
-      const response = await fetch('http://localhost:5000/upload', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}))
-        throw new Error(errData.error || `Server returned ${response.status}`)
-      }
-
-      const data = await response.json()
-      const summary = {
-        session_id: id,
-        uploaded_at: new Date().toISOString(),
-        row_count: data.row_count ?? null,
-        duration_sec: data.duration_sec ?? null,
-        sample_rate_hz: data.sample_rate_hz ?? null,
-        fixation_count: data.fixation_count ?? null,
-        avg_fixation_duration_sec: data.avg_fixation_duration_sec ?? null,
-        blink_count: data.blink_count ?? null,
-        avg_blink_duration_sec: data.avg_blink_duration_sec ?? null,
-        avg_pupil_left_mm: data.avg_pupil_left_mm ?? null,
-        avg_pupil_right_mm: data.avg_pupil_right_mm ?? null,
-        gaze_points: data.gaze_points ?? [],
-        headers: data.headers ?? [],
-        preview_rows: data.preview_rows ?? [],
-        detected_cols: data.detected_cols ?? {},
-        heatmap: data.heatmap ?? [],
-        scanpath: data.scanpath ?? [],
-        fixation_map: data.fixation_map ?? [],
-        summary: data.summary ?? [],
-      }
-
-      saveGazSummary(summary)
-      setGazSummary(summary)
-
-      const updated = updateSession(id, { csv_uploaded: true, csv_filename: file.name })
-      setSession(updated)
-    } catch (err) {
-      setCsvError(err.message || 'Failed to upload. Make sure the Flask server is running on port 5000.')
-    } finally {
-      setCsvUploading(false)
-      e.target.value = ''
-    }
-  }
-
-  const handleRemoveCsv = () => {
-    deleteGazSummary(id)
-    setGazSummary(null)
-    const updated = updateSession(id, { csv_uploaded: false, csv_filename: null })
-    setSession(updated)
-    setCsvFilename('')
-    setConfirmDelete(false)
-    setShowPreview(false)
+  const visualizationsReady = dataProcessed && !!session?.analysis_viewed
+  const currentPhase = !hasStimuli ? 1 : !csvUploaded ? 2 : !dataProcessed ? 3 : !visualizationsReady ? 4 : 5
+  const getPhaseRoute = (phaseNum) => {
+    if (phaseNum === 1) return `/sessions/${id}`
+    if (phaseNum === 2) return `/sessions/${id}/stimuli`
+    if (phaseNum === 3) return `/sessions/${id}/upload`
+    return `/sessions/${id}/analysis`
   }
 
   const handleDelete = () => {
     if (confirm(`Delete session ${id}? This cannot be undone.`)) {
       deleteSession(id)
       navigate('/')
+    }
+  }
+
+  const handleResetSessionData = () => {
+    if (!confirm('Reset session data for this session? This will remove uploaded stimuli and CSV analysis results.')) {
+      return
+    }
+
+    deleteStimuliForSession(id)
+    deleteGazSummary(id)
+    const updated = updateSession(id, {
+      stimulus_loaded: false,
+      stimuli_count: 0,
+      csv_uploaded: false,
+      csv_filename: null,
+      analysis_viewed: false,
+      analysis_viewed_at: null,
+    })
+
+    if (updated) {
+      setSession(updated)
+      setStimuli([])
+      setStimuliCount(0)
+      setGazSummary(null)
+      showToast('Session data reset')
     }
   }
 
@@ -202,6 +155,9 @@ export default function SessionDetail() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-ghost" onClick={handleResetSessionData}>
+              Reset Data
+            </button>
             <button className="btn btn-danger" onClick={handleDelete}>Delete</button>
           </div>
         </div>
@@ -241,6 +197,10 @@ export default function SessionDetail() {
                 </span>
               </div>
               <div className="detail-field">
+                <span className="detail-field-label">CSV</span>
+                <span className="detail-field-value">{csvUploaded ? 'Uploaded' : 'Not uploaded'}</span>
+              </div>
+              <div className="detail-field">
                 <span className="detail-field-label">Date</span>
                 <span className="detail-field-value">
                   {format(new Date(session.date), 'MMM d, yyyy | h:mm a')}
@@ -254,7 +214,6 @@ export default function SessionDetail() {
               )}
             </div>
 
-            {/* Stimulus preview inline */}
             {stimuli.length > 0 && (
               <div className="card detail-section" style={{ marginBottom: 16 }}>
                 <div className="detail-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -264,7 +223,7 @@ export default function SessionDetail() {
                     style={{ fontSize: 12, padding: '6px 10px' }}
                     onClick={() => navigate(`/sessions/${id}/stimuli`)}
                   >
-                    Open Viewer →
+                    Open Viewer
                   </button>
                 </div>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -279,216 +238,22 @@ export default function SessionDetail() {
                       {format(new Date(stimuli[0].created_at), 'MMM d | h:mm a')}
                     </div>
                   </div>
-                  <div style={{
-                    flex: 1,
-                    background: 'var(--surface2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    padding: 10,
-                    minHeight: 120,
-                    maxHeight: 240,
-                    overflow: 'hidden',
-                  }}>
-                    {stimuli[0].type === 'image' ? (
-                      <img
-                        src={stimuli[0].src}
-                        alt={stimuli[0].name}
-                        style={{
-                          width: '100%',
-                          maxHeight: 220,
-                          objectFit: 'contain',
-                          borderRadius: 6,
-                          display: 'block',
-                        }}
-                      />
-                    ) : (
-                      <pre style={{
-                        margin: 0,
-                        background: '#0b0e14',
-                        color: '#e2e8f5',
-                        fontFamily: 'var(--mono)',
-                        fontSize: 11,
-                        lineHeight: 1.4,
-                        padding: 10,
-                        borderRadius: 6,
-                        maxHeight: 220,
-                        overflow: 'auto',
-                        border: '1px solid var(--border2)',
-                      }}>
-                        {stimuli[0].content}
-                      </pre>
-                    )}
-                  </div>
                 </div>
               </div>
             )}
 
-            <div className="card" style={csvUploaded ? { borderColor: 'var(--accent-dim)' } : {}}>
-              <div className="detail-section-title">Phase 3 - GP3HD Data Import</div>
-
-              {!csvUploaded ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <p style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.7 }}>
-                    Export the CSV from GP3HD software (File to Export Data), then upload it here.
-                    The file will be sent to the analysis server for processing.
-                  </p>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".csv,text/csv,text/plain"
-                    onChange={handleCsvUpload}
-                    style={{ display: 'none' }}
-                  />
-
-                  <button
-                    className={`btn ${csvUploading ? 'btn-ghost' : 'btn-primary'}`}
-                    style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={() => !csvUploading && fileInputRef.current?.click()}
-                    disabled={csvUploading}
-                  >
-                    {csvUploading ? 'Uploading and parsing...' : 'Upload GP3HD CSV'}
-                  </button>
-
-                  {csvError && (
-                    <div style={{
-                      background: 'rgba(248,113,113,0.08)',
-                      border: '1px solid rgba(248,113,113,0.25)',
-                      borderRadius: 6,
-                      padding: '10px 12px',
-                      fontSize: 12,
-                      color: 'var(--red)',
-                      lineHeight: 1.6,
-                    }}>
-                      {csvError}
-                    </div>
-                  )}
-
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
-                    Supports GP3HD format | parsed by Flask backend
-                  </p>
+            {gazSummary && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="detail-section-title">Gaze Statistics</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <StatTile label="Fixations" value={gazSummary.fixation_count || '-'} accent />
+                  <StatTile label="Avg Fixation" value={gazSummary.avg_fixation_duration_sec != null ? gazSummary.avg_fixation_duration_sec : '-'} unit="s" />
+                  <StatTile label="Blinks" value={gazSummary.blink_count || '-'} />
+                  <StatTile label="Avg Blink" value={gazSummary.avg_blink_duration_sec != null ? gazSummary.avg_blink_duration_sec : '-'} unit="s" />
                 </div>
-              ) : (
-                <div>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 0',
-                    marginBottom: 10,
-                    borderBottom: '1px solid var(--border)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="pill pill-complete">
-                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
-                        Uploaded
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>
-                        {session.csv_filename || csvFilename || 'data.csv'}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {gazSummary ? format(new Date(gazSummary.uploaded_at), 'MMM d | h:mm a') : ''}
-                    </span>
-                  </div>
+              </div>
+            )}
 
-                  {gazSummary && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: 'var(--text-dim)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Samples</span>
-                        <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>
-                          {gazSummary.row_count != null ? gazSummary.row_count.toLocaleString() : '-'}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Duration</span>
-                        <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>
-                          {gazSummary.duration_sec != null ? `${gazSummary.duration_sec}s` : '-'}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Sample rate</span>
-                        <span style={{ fontFamily: 'var(--mono)', color: 'var(--text)' }}>
-                          {gazSummary.sample_rate_hz != null ? `~${gazSummary.sample_rate_hz} Hz` : '-'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                    <button
-                      className="btn btn-ghost"
-                      style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}
-                      onClick={() => setShowPreview(v => !v)}
-                    >
-                      {showPreview ? 'Hide Preview' : 'Preview Rows'}
-                    </button>
-
-                    {!confirmDelete ? (
-                      <button
-                        className="btn btn-danger"
-                        style={{ fontSize: 12, padding: '8px 14px' }}
-                        onClick={() => setConfirmDelete(true)}
-                      >
-                        Remove
-                      </button>
-                    ) : (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-danger" style={{ fontSize: 12 }} onClick={handleRemoveCsv}>
-                          Confirm
-                        </button>
-                        <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setConfirmDelete(false)}>
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {showPreview && gazSummary?.preview_rows?.length > 0 && (
-                    <div style={{ marginTop: 14, overflowX: 'auto' }}>
-                      <table style={{
-                        width: '100%',
-                        borderCollapse: 'collapse',
-                        fontFamily: 'var(--mono)',
-                        fontSize: 10,
-                        color: 'var(--text-dim)',
-                      }}>
-                        <thead>
-                          <tr>
-                            {gazSummary.headers.slice(0, 10).map(h => (
-                              <th key={h} style={{
-                                padding: '5px 8px',
-                                textAlign: 'left',
-                                background: 'var(--surface2)',
-                                borderBottom: '1px solid var(--border)',
-                                color: 'var(--text-muted)',
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {gazSummary.preview_rows.map((row, ri) => (
-                            <tr key={ri} style={{ borderBottom: '1px solid var(--border)' }}>
-                              {gazSummary.headers.slice(0, 10).map(h => (
-                                <td key={h} style={{ padding: '4px 8px', whiteSpace: 'nowrap', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {row[h] ?? ''}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, textAlign: 'right', fontFamily: 'var(--mono)' }}>
-                        showing first 8 rows | {gazSummary.headers.length} columns total{gazSummary.headers.length > 10 ? ' (displaying 10)' : ''}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
 
           <div>
@@ -499,7 +264,13 @@ export default function SessionDetail() {
                   const isDone = p.num < currentPhase
                   const isActive = p.num === currentPhase
                   return (
-                    <div key={p.num} className="phase-item">
+                    <div
+                      key={p.num}
+                      className="phase-item"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => navigate(getPhaseRoute(p.num))}
+                      title={`Open ${p.label}`}
+                    >
                       <div className={`phase-num ${isDone ? 'done' : isActive ? 'active' : ''}`}>
                         {isDone ? 'OK' : p.num}
                       </div>
@@ -522,99 +293,6 @@ export default function SessionDetail() {
               </div>
             </div>
 
-            {gazSummary && (
-              <div className="card" style={{ marginBottom: 16 }}>
-                <div className="detail-section-title">Gaze Statistics</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-                  <StatTile label="Fixations" value={gazSummary.fixation_count || '-'} accent />
-                  <StatTile label="Avg Fixation" value={gazSummary.avg_fixation_duration_sec != null ? gazSummary.avg_fixation_duration_sec : '-'} unit="s" />
-                  <StatTile label="Blinks" value={gazSummary.blink_count || '-'} />
-                  <StatTile label="Avg Blink" value={gazSummary.avg_blink_duration_sec != null ? gazSummary.avg_blink_duration_sec : '-'} unit="s" />
-                  {gazSummary.avg_pupil_left_mm && (
-                    <StatTile label="Left Pupil" value={gazSummary.avg_pupil_left_mm} unit="mm" />
-                  )}
-                  {gazSummary.avg_pupil_right_mm && (
-                    <StatTile label="Right Pupil" value={gazSummary.avg_pupil_right_mm} unit="mm" />
-                  )}
-                </div>
-
-                {gazSummary.detected_cols && Object.keys(gazSummary.detected_cols).length > 0 && (
-                  <div style={{
-                    background: 'var(--bg)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    padding: '10px 12px',
-                    fontSize: 11,
-                    color: 'var(--text-muted)',
-                    fontFamily: 'var(--mono)',
-                    lineHeight: 1.8,
-                  }}>
-                    <span style={{ color: 'var(--text-dim)' }}>Detected columns: </span>
-                    {Object.entries(gazSummary.detected_cols)
-                      .filter(([, v]) => v !== null)
-                      .map(([k, v]) => (
-                        <span key={k} style={{
-                          display: 'inline-block',
-                          background: 'var(--surface2)',
-                          border: '1px solid var(--border2)',
-                          borderRadius: 3,
-                          padding: '1px 6px',
-                          marginRight: 4,
-                          marginBottom: 2,
-                          color: 'var(--accent)',
-                          fontSize: 10,
-                        }}>
-                          {v}
-                        </span>
-                      ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {gazSummary?.gaze_points?.length > 0 && (
-              <div className="card" style={{ marginBottom: 16 }}>
-                <div className="detail-section-title">Fixation Scatter</div>
-                <div style={{ position: 'relative', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                  <svg
-                    viewBox="0 0 1 0.75"
-                    width="100%"
-                    preserveAspectRatio="xMidYMid meet"
-                    style={{ display: 'block' }}
-                  >
-                    <rect x="0" y="0" width="1" height="0.75" fill="#0b0e14" />
-                    <rect x="0" y="0" width="1" height="0.75" fill="none" stroke="var(--border2)" strokeWidth="0.005" />
-                    {gazSummary.gaze_points.map(([x, y], i) => (
-                      <circle
-                        key={i}
-                        cx={x}
-                        cy={y * 0.75}
-                        r="0.006"
-                        fill="#39d98a"
-                        opacity="0.3"
-                      />
-                    ))}
-                  </svg>
-                  <div style={{
-                    position: 'absolute',
-                    bottom: 8,
-                    right: 10,
-                    fontSize: 10,
-                    fontFamily: 'var(--mono)',
-                    color: 'var(--text-muted)',
-                    background: 'rgba(8,10,15,0.7)',
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                  }}>
-                    {gazSummary.gaze_points.length.toLocaleString()} fixation points
-                  </div>
-                </div>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-                  Scatter shows fixation POG coordinates (normalized 0-1). X = horizontal, Y = vertical.
-                </p>
-              </div>
-            )}
-
             <div className="card" style={{ background: 'var(--accent-glow)', borderColor: 'var(--accent-dim)' }}>
               <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
                 Next Step
@@ -623,7 +301,7 @@ export default function SessionDetail() {
               {currentPhase === 1 && (
                 <>
                   <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 12 }}>
-                    Load your stimulus in the viewer, then run the recording in GP3HD software.
+                    Start by loading a stimulus for the session.
                   </p>
                   <button
                     className="btn btn-primary"
@@ -638,55 +316,42 @@ export default function SessionDetail() {
               {currentPhase === 2 && (
                 <>
                   <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 12 }}>
-                    Stimulus is loaded. Finish your GP3HD recording, then upload the exported CSV below.
+                    Stimulus is loaded. Upload the exported GP3HD CSV next.
                   </p>
                   <button
-                    className="btn btn-ghost"
+                    className="btn btn-primary"
                     style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={() => navigate(`/sessions/${id}/stimuli`)}
+                    onClick={() => navigate(`/sessions/${id}/upload`)}
                   >
-                    Review Stimuli
+                    Upload CSV
                   </button>
                 </>
               )}
 
-              {currentPhase === 3 && (
+              {(currentPhase === 3 || currentPhase === 4) && (
                 <>
                   <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 12 }}>
-                    CSV is uploaded and parsed. Run analysis to generate heatmaps and fixation reports.
+                    Data is ready. Open analysis to generate and review visualizations.
                   </p>
                   <button
                     className="btn btn-primary"
                     style={{ width: '100%', justifyContent: 'center' }}
                     onClick={() => navigate(`/sessions/${id}/analysis`)}
                   >
-                    View Analysis &amp; Visualizations →
+                    Open Analysis
                   </button>
                 </>
               )}
 
-              {currentPhase === 4 && (
-                <>
-                  <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 12 }}>
-                    Data is processed. View heatmaps, scanpath, fixations, AOIs, and the plain-English summary.
-                  </p>
-                  <button
-                    className="btn btn-primary"
-                    style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={() => navigate(`/sessions/${id}/analysis`)}
-                  >
-                    Open Visualizations →
-                  </button>
-                </>
+              {currentPhase === 5 && (
+                <p style={{ fontSize: 13, color: 'var(--text-dim)' }}>
+                  All phases completed. Click any phase in the progress panel to jump back to it.
+                </p>
               )}
             </div>
           </div>
         </div>
       </main>
-
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   )
 }

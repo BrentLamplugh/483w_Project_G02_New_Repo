@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import { getSessionById, updateSession } from '../store/sessions'
+import { showToast } from '../store/toast'
 import {
   getStimuliForSession,
   generateStimulusId,
@@ -59,67 +60,66 @@ export default function StimulusViewer() {
     () => (stimuli.length ? stimuli[Math.min(activeIndex, stimuli.length - 1)] : null),
     [stimuli, activeIndex]
   )
+  const canContinue = stimuli.length > 0
 
-const handleImageUpload = (e) => {
-  const file = e.target.files?.[0]
-  if (!file) return
+  const handleImageUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
-  // Hard-stop anything that isn't an image
-  if (!file.type || !file.type.startsWith('image/')) {
-    setStatusMsg('Please upload an image file (PNG, JPG, JPEG, GIF, WEBP).')
-    e.target.value = ''
-    return
-  }
+    if (!file.type || !file.type.startsWith('image/')) {
+      setStatusMsg('Please upload an image file (PNG, JPG, JPEG, GIF, WEBP).')
+      e.target.value = ''
+      return
+    }
 
-  setIsProcessing(true)
-  setStatusMsg('Reading image...')
+    setIsProcessing(true)
+    setStatusMsg('Reading image...')
 
-  const reader = new FileReader()
+    const reader = new FileReader()
+    reader.onload = () => {
+      const src = reader.result
+      const img = new Image()
 
-  reader.onload = () => {
-    const src = reader.result
-    const img = new Image()
+      img.onload = () => {
+        const stimulus = {
+          stimulus_id: generateStimulusId(id),
+          session_id: id,
+          type: 'image',
+          name: file.name,
+          src,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          size_kb: Math.round(file.size / 1024),
+          created_at: new Date().toISOString(),
+        }
 
-    img.onload = () => {
-      const stimulus = {
-        stimulus_id: generateStimulusId(id),
-        session_id: id,
-        type: 'image',
-        name: file.name,
-        src, // data URL used directly by <img />
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        size_kb: Math.round(file.size / 1024),
-        created_at: new Date().toISOString(),
+        saveStimulus(stimulus)
+        const list = getStimuliForSession(id)
+        setStimuli(list)
+      setActiveIndex(list.length - 1)
+      setStatusMsg('Image added to session')
+      showToast('Stimulus added')
+      setIsProcessing(false)
+      e.target.value = ''
       }
 
-      saveStimulus(stimulus)
-      const list = getStimuliForSession(id)
-      setStimuli(list)
-      setActiveIndex(list.length - 1) // jump to newly added image
-      setStatusMsg('Image added to session')
+      img.onerror = () => {
+        setStatusMsg('Could not load this image file.')
+        setIsProcessing(false)
+        e.target.value = ''
+      }
+
+      img.src = src
+    }
+
+    reader.onerror = () => {
+      setStatusMsg('Failed to read file.')
       setIsProcessing(false)
       e.target.value = ''
     }
 
-    img.onerror = () => {
-      setStatusMsg('Could not load this image file.')
-      setIsProcessing(false)
-      e.target.value = ''
-    }
-
-    img.src = src
+    reader.readAsDataURL(file)
   }
-
-  reader.onerror = () => {
-    setStatusMsg('Failed to read file.')
-    setIsProcessing(false)
-    e.target.value = ''
-  }
-
-  reader.readAsDataURL(file)
-}
-
 
   const handleCodeFile = e => {
     const file = e.target.files?.[0]
@@ -153,6 +153,7 @@ const handleImageUpload = (e) => {
     setStimuli(list)
     setSnippetText('')
     setStatusMsg('Code snippet added')
+    showToast('Stimulus added')
   }
 
   const handleDelete = stimulusId => {
@@ -161,6 +162,7 @@ const handleImageUpload = (e) => {
     setStimuli(list)
     setActiveIndex(0)
     setStatusMsg('Stimulus removed')
+    showToast('Stimulus removed', { type: 'info' })
   }
 
   if (notFound) {
@@ -172,7 +174,7 @@ const handleImageUpload = (e) => {
         </header>
         <main className="page">
           <div className="empty-state">
-            <div className="empty-icon">⚠</div>
+            <div className="empty-icon">!</div>
             <div className="empty-title">Session not found</div>
             <div className="empty-desc">The session ID "{id}" does not exist.</div>
             <button className="btn btn-primary" onClick={() => navigate('/')}>
@@ -191,31 +193,25 @@ const handleImageUpload = (e) => {
       <header className="topbar">
         <div className="topbar-dot" />
         <span className="topbar-title">EyeTrack Research</span>
-        <span className="topbar-subtitle">/ stimulus viewer</span>
+        <span className="topbar-subtitle">/ step 1 / stimuli</span>
       </header>
 
       <main className="page">
         <button className="back-link" onClick={() => navigate(`/sessions/${id}`)}>
-          ← back to session
+          Back to session summary
         </button>
 
         <div className="page-header">
           <div>
-            <div className="page-eyebrow">Phase 2 — Stimulus Presentation</div>
+            <div className="page-eyebrow">Step 1 of 3</div>
             <h1 className="page-title">Stimuli for {session.session_id}</h1>
             <p className="page-subtitle">
               Load images or code snippets, preview them, and log stimulus metadata.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-primary" onClick={() => navigate(`/sessions/${id}`)}>
-              Session Summary
-            </button>
-          </div>
         </div>
 
         <div className="detail-grid" style={{ gridTemplateColumns: '360px 1fr' }}>
-          {/* Left column — inputs and list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="card">
               <div className="detail-section-title">Add Stimulus</div>
@@ -240,7 +236,7 @@ const handleImageUpload = (e) => {
                   className="form-input"
                   style={{ padding: 10 }}
                 />
-                <div className="form-hint">We detect language from the extension.</div>
+                <div className="form-hint">Language is detected from file extension.</div>
 
                 <label className="form-label" style={{ marginTop: 10 }}>Or paste code</label>
                 <input
@@ -274,7 +270,7 @@ const handleImageUpload = (e) => {
                     onClick={() => addCodeStimulus(snippetName, snippetText)}
                     disabled={!snippetText.trim()}
                   >
-                    Save Snippet →
+                    Save Snippet
                   </button>
                 </div>
                 {statusMsg && (
@@ -309,17 +305,21 @@ const handleImageUpload = (e) => {
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span className={`type-badge ${s.type}`}>
-                            {s.type === 'code' ? '{ }' : '▣'} {s.type}
+                            {s.type === 'code' ? '{ }' : '[]'} {s.type}
                           </span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{
-                              fontSize: 13, fontWeight: 600,
-                              color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: '#fff',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
                             }}>
                               {s.name}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              {format(new Date(s.created_at), 'MMM d · h:mm a')}
+                              {format(new Date(s.created_at), 'MMM d | h:mm a')}
                             </div>
                           </div>
                           <button
@@ -338,7 +338,6 @@ const handleImageUpload = (e) => {
             </div>
           </div>
 
-          {/* Right column — viewer */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="card" style={{ minHeight: 420 }}>
               <div className="detail-section-title">Preview for participant</div>
@@ -356,14 +355,14 @@ const handleImageUpload = (e) => {
                         onClick={() => setActiveIndex(Math.max(0, activeIndex - 1))}
                         disabled={activeIndex === 0}
                       >
-                        ◀ Prev
+                        Prev
                       </button>
                       <button
                         className="btn btn-ghost"
                         onClick={() => setActiveIndex(Math.min(stimuli.length - 1, activeIndex + 1))}
                         disabled={activeIndex >= stimuli.length - 1}
                       >
-                        Next ▶
+                        Next
                       </button>
                     </div>
                   </div>
@@ -417,7 +416,7 @@ const handleImageUpload = (e) => {
                 <div className="empty-state" style={{ padding: 40, borderStyle: 'dashed' }}>
                   <div className="empty-title">Nothing selected</div>
                   <div className="empty-desc">
-                    Add a stimulus on the left, then pick it to preview for participants.
+                    Add a stimulus on the left, then select it to preview.
                   </div>
                 </div>
               )}
@@ -432,7 +431,7 @@ const handleImageUpload = (e) => {
                   <Meta label="Created" value={format(new Date(activeStimulus.created_at), 'MMM d, yyyy h:mm a')} />
                   {activeStimulus.type === 'image' && (
                     <>
-                      <Meta label="Dimensions" value={`${activeStimulus.width} × ${activeStimulus.height}`} />
+                      <Meta label="Dimensions" value={`${activeStimulus.width} x ${activeStimulus.height}`} />
                       <Meta label="Size (KB)" value={activeStimulus.size_kb} />
                     </>
                   )}
@@ -448,11 +447,24 @@ const handleImageUpload = (e) => {
               ) : (
                 <div className="empty-state" style={{ padding: 28, borderStyle: 'dashed' }}>
                   <div className="empty-title">No metadata yet</div>
-                  <div className="empty-desc">Select a stimulus to see its recorded details.</div>
+                  <div className="empty-desc">Select a stimulus to see its details.</div>
                 </div>
               )}
             </div>
           </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 20 }}>
+          <button className="btn btn-ghost" onClick={() => navigate(`/sessions/${id}`)}>
+            Back
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate(`/sessions/${id}/upload`)}
+            disabled={!canContinue}
+          >
+            Next
+          </button>
         </div>
       </main>
     </div>
@@ -480,7 +492,7 @@ function Meta({ label, value }) {
       }}>
         {label}
       </span>
-      <span style={{ fontSize: 13, color: 'var(--text)' }}>{value ?? '—'}</span>
+      <span style={{ fontSize: 13, color: 'var(--text)' }}>{value ?? '-'}</span>
     </div>
   )
 }

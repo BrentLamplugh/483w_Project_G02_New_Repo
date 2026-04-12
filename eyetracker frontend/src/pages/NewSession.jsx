@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { saveSession, generateSessionId } from '../store/sessions'
+import { showToast } from '../store/toast'
 import { format } from 'date-fns'
 
 const TASK_PRESETS = [
@@ -57,9 +58,11 @@ export default function NewSession() {
       csv_uploaded: false,
       stimulus_loaded: false,
       stimuli_count: 0,
+      analysis_viewed: false,
     }
 
     saveSession(session)
+    showToast(`Session ${sessionId} created`)
     navigate(`/sessions/${sessionId}`)
   }
 

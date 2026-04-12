@@ -1,6 +1,7 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getSessionById } from '../store/sessions'
+import { getSessionById, updateSession } from '../store/sessions'
 import { getStimuliForSession } from '../store/stimuli'
 import { getGazSummary } from '../store/gazdata'
 import { format } from 'date-fns'
@@ -794,6 +795,12 @@ export default function AnalysisView() {
       setNotFound(true)
     }
   }, [id])
+  useEffect(() => {
+    if (session && session.csv_uploaded && !session.analysis_viewed) {
+      const updated = updateSession(id, { analysis_viewed: true, analysis_viewed_at: new Date().toISOString() })
+      if (updated) setSession(updated)
+    }
+  }, [session, id])
 
   const gazePoints    = gazSummary?.gaze_points ?? []
   const activeStimulus = stimuli[activeStimIdx] ?? null
@@ -828,12 +835,12 @@ export default function AnalysisView() {
 
       <main className="page">
         <button className="back-link" onClick={() => navigate(`/sessions/${id}`)}>
-          ← Back to session
+          Back to session
         </button>
 
         <div className="page-header">
           <div>
-            <div className="page-eyebrow">Phase 5 · Visualization</div>
+            <div className="page-eyebrow">Phase 5 - Visualization</div>
             <h1 className="page-title">{session.task_name}</h1>
             <p className="page-subtitle">
               {session.participant_name}
@@ -851,7 +858,7 @@ export default function AnalysisView() {
                   style={{ fontSize: 11, padding: '6px 12px' }}
                   onClick={() => setActiveStimIdx(i)}
                 >
-                  {s.name.length > 18 ? s.name.slice(0, 16) + '…' : s.name}
+                  {s.name.length > 18 ? s.name.slice(0, 16) + '...' : s.name}
                 </button>
               ))}
             </div>
@@ -868,7 +875,7 @@ export default function AnalysisView() {
             color: 'var(--amber)',
             marginBottom: 24,
           }}>
-            ⚠ No gaze data found for this session. Return to the session page and upload a GP3HD CSV to enable visualizations.
+            No gaze data found for this session. Return to the session page and upload a GP3HD CSV.
           </div>
         )}
 
@@ -881,7 +888,9 @@ export default function AnalysisView() {
           {activeTab === 'aoi'      && <AOIView      gazePoints={gazePoints} stimulus={activeStimulus} />}
           {activeTab === 'summary'  && <SummaryView  gazSummary={gazSummary} gazePoints={gazePoints} sessionName={session.task_name} />}
         </div>
+
       </main>
     </div>
   )
 }
+

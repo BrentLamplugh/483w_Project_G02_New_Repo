@@ -1,4 +1,6 @@
 const STORAGE_KEY = 'eye_tracking_sessions'
+const STIMULI_STORAGE_KEY = 'eye_tracking_stimuli'
+const GAZ_STORAGE_KEY = 'eye_tracking_gaz_summaries'
 
 export function getSessions() {
   try {
@@ -7,6 +9,7 @@ export function getSessions() {
     return parsed.map(s => ({
       stimulus_loaded: false,
       stimuli_count: 0,
+      analysis_viewed: false,
       ...s,
     }))
   } catch {
@@ -19,6 +22,7 @@ export function saveSession(session) {
   sessions.push({
     stimulus_loaded: false,
     stimuli_count: 0,
+    analysis_viewed: false,
     ...session,
   })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
@@ -31,6 +35,27 @@ export function getSessionById(id) {
 export function deleteSession(id) {
   const sessions = getSessions().filter(s => s.session_id !== id)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+
+  // Remove dependent records so stale data cannot leak into future sessions.
+  try {
+    const stimuli = JSON.parse(localStorage.getItem(STIMULI_STORAGE_KEY) || '[]')
+    localStorage.setItem(
+      STIMULI_STORAGE_KEY,
+      JSON.stringify(stimuli.filter(s => s.session_id !== id))
+    )
+  } catch {
+    // no-op: keep session delete resilient
+  }
+
+  try {
+    const summaries = JSON.parse(localStorage.getItem(GAZ_STORAGE_KEY) || '[]')
+    localStorage.setItem(
+      GAZ_STORAGE_KEY,
+      JSON.stringify(summaries.filter(s => s.session_id !== id))
+    )
+  } catch {
+    // no-op: keep session delete resilient
+  }
 }
 
 export function updateSession(id, updates) {
@@ -45,7 +70,35 @@ export function updateSession(id, updates) {
 
 export function generateSessionId() {
   const year = new Date().getFullYear()
-  const existing = getSessions().filter(s => s.session_id.startsWith(`S_${year}_`))
-  const next = String(existing.length + 1).padStart(3, '0')
-  return `S_${year}_${next}`
+  const usedIds = new Set()
+
+  getSessions().forEach(s => {
+    if (s?.session_id) usedIds.add(s.session_id)
+  })
+
+  try {
+    const stimuli = JSON.parse(localStorage.getItem(STIMULI_STORAGE_KEY) || '[]')
+    stimuli.forEach(s => {
+      if (s?.session_id) usedIds.add(s.session_id)
+    })
+  } catch {
+    // no-op
+  }
+
+  try {
+    const summaries = JSON.parse(localStorage.getItem(GAZ_STORAGE_KEY) || '[]')
+    summaries.forEach(s => {
+      if (s?.session_id) usedIds.add(s.session_id)
+    })
+  } catch {
+    // no-op
+  }
+
+  let counter = 1
+  let candidate = `S_${year}_${String(counter).padStart(3, '0')}`
+  while (usedIds.has(candidate)) {
+    counter += 1
+    candidate = `S_${year}_${String(counter).padStart(3, '0')}`
+  }
+  return candidate
 }

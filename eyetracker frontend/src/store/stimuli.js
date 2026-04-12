@@ -32,3 +32,8 @@ export function deleteStimulus(stimulusId) {
   const remaining = getAll().filter(s => s.stimulus_id !== stimulusId)
   persist(remaining)
 }
+
+export function deleteStimuliForSession(sessionId) {
+  const remaining = getAll().filter(s => s.session_id !== sessionId)
+  persist(remaining)
+}
