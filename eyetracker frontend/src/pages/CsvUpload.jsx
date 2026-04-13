@@ -55,7 +55,7 @@ export default function CsvUpload() {
     formData.append('file', file)
 
     try {
-      const response = await fetch('http://localhost:5000/upload', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/upload`, {
         method: 'POST',
         body: formData,
       })
