@@ -1,104 +1,47 @@
-const STORAGE_KEY = 'eye_tracking_sessions'
-const STIMULI_STORAGE_KEY = 'eye_tracking_stimuli'
-const GAZ_STORAGE_KEY = 'eye_tracking_gaz_summaries'
+import {
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+} from 'firebase/firestore'
+import { db } from '../firebase'
 
-export function getSessions() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-    // Ensure newer fields exist for older saved sessions
-    return parsed.map(s => ({
-      stimulus_loaded: false,
-      stimuli_count: 0,
-      analysis_viewed: false,
-      ...s,
-    }))
-  } catch {
-    return []
-  }
+const COL = 'sessions'
+
+const DEFAULTS = { stimulus_loaded: false, stimuli_count: 0, analysis_viewed: false }
+
+export async function getSessions() {
+  const snap = await getDocs(collection(db, COL))
+  return snap.docs
+    .map(d => ({ ...DEFAULTS, ...d.data() }))
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
 }
 
-export function saveSession(session) {
-  const sessions = getSessions()
-  sessions.push({
-    stimulus_loaded: false,
-    stimuli_count: 0,
-    analysis_viewed: false,
-    ...session,
-  })
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+export async function saveSession(session) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Firestore timed out — check your database rules and internet connection')), 8000)
+  )
+  await Promise.race([
+    setDoc(doc(db, COL, session.session_id), { ...DEFAULTS, ...session }),
+    timeout,
+  ])
 }
 
-export function getSessionById(id) {
-  return getSessions().find(s => s.session_id === id) || null
+export async function getSessionById(id) {
+  const snap = await getDoc(doc(db, COL, id))
+  return snap.exists() ? { ...DEFAULTS, ...snap.data() } : null
 }
 
-export function deleteSession(id) {
-  const sessions = getSessions().filter(s => s.session_id !== id)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
-
-  // Remove dependent records so stale data cannot leak into future sessions.
-  try {
-    const stimuli = JSON.parse(localStorage.getItem(STIMULI_STORAGE_KEY) || '[]')
-    localStorage.setItem(
-      STIMULI_STORAGE_KEY,
-      JSON.stringify(stimuli.filter(s => s.session_id !== id))
-    )
-  } catch {
-    // no-op: keep session delete resilient
-  }
-
-  try {
-    const summaries = JSON.parse(localStorage.getItem(GAZ_STORAGE_KEY) || '[]')
-    localStorage.setItem(
-      GAZ_STORAGE_KEY,
-      JSON.stringify(summaries.filter(s => s.session_id !== id))
-    )
-  } catch {
-    // no-op: keep session delete resilient
-  }
+export async function updateSession(id, updates) {
+  const ref = doc(db, COL, id)
+  await updateDoc(ref, updates)
+  const snap = await getDoc(ref)
+  return snap.exists() ? snap.data() : null
 }
 
-export function updateSession(id, updates) {
-  const sessions = getSessions()
-  const idx = sessions.findIndex(s => s.session_id === id)
-  if (idx === -1) return null
-  const updated = { ...sessions[idx], ...updates }
-  sessions[idx] = updated
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
-  return updated
+export async function deleteSession(id) {
+  await deleteDoc(doc(db, COL, id))
 }
 
 export function generateSessionId() {
   const year = new Date().getFullYear()
-  const usedIds = new Set()
-
-  getSessions().forEach(s => {
-    if (s?.session_id) usedIds.add(s.session_id)
-  })
-
-  try {
-    const stimuli = JSON.parse(localStorage.getItem(STIMULI_STORAGE_KEY) || '[]')
-    stimuli.forEach(s => {
-      if (s?.session_id) usedIds.add(s.session_id)
-    })
-  } catch {
-    // no-op
-  }
-
-  try {
-    const summaries = JSON.parse(localStorage.getItem(GAZ_STORAGE_KEY) || '[]')
-    summaries.forEach(s => {
-      if (s?.session_id) usedIds.add(s.session_id)
-    })
-  } catch {
-    // no-op
-  }
-
-  let counter = 1
-  let candidate = `S_${year}_${String(counter).padStart(3, '0')}`
-  while (usedIds.has(candidate)) {
-    counter += 1
-    candidate = `S_${year}_${String(counter).padStart(3, '0')}`
-  }
-  return candidate
+  const suffix = Date.now().toString(36).slice(-4).toUpperCase()
+  return `S_${year}_${suffix}`
 }

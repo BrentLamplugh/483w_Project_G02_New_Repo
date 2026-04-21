@@ -15,7 +15,7 @@ const TASK_PRESETS = [
 
 export default function NewSession() {
   const navigate = useNavigate()
-  const sessionId = generateSessionId()
+  const [sessionId] = useState(() => generateSessionId())
 
   const [form, setForm] = useState({
     participant_id: '',
@@ -27,6 +27,8 @@ export default function NewSession() {
   })
 
   const [errors, setErrors] = useState({})
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const set = (field, value) => {
     setForm(f => ({ ...f, [field]: value }))
@@ -43,9 +45,13 @@ export default function NewSession() {
     return e
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!sessionId) return
     const e = validate()
     if (Object.keys(e).length) { setErrors(e); return }
+
+    setSubmitting(true)
+    setSubmitError('')
 
     const session = {
       session_id: sessionId,
@@ -61,9 +67,14 @@ export default function NewSession() {
       analysis_viewed: false,
     }
 
-    saveSession(session)
-    showToast(`Session ${sessionId} created`)
-    navigate(`/sessions/${sessionId}`)
+    try {
+      await saveSession(session)
+      showToast(`Session ${sessionId} created`)
+      navigate(`/sessions/${sessionId}`)
+    } catch (err) {
+      setSubmitError(`Failed to save session: ${err.message}`)
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -198,12 +209,22 @@ export default function NewSession() {
             Date: {format(new Date(), 'MMMM d, yyyy')}
           </div>
 
+          {submitError && (
+            <div style={{
+              background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.25)',
+              borderRadius: 6, padding: '10px 12px', fontSize: 12, color: 'var(--red)',
+              lineHeight: 1.6, marginBottom: 12,
+            }}>
+              {submitError}
+            </div>
+          )}
+
           <div className="form-actions">
-            <button className="btn btn-ghost" onClick={() => navigate('/')}>
+            <button className="btn btn-ghost" onClick={() => navigate('/')} disabled={submitting}>
               Cancel
             </button>
-            <button className="btn btn-primary" onClick={handleSubmit}>
-              Create Session →
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={!sessionId || submitting}>
+              {submitting ? 'Saving...' : sessionId ? 'Create Session →' : 'Connecting...'}
             </button>
           </div>
         </div>

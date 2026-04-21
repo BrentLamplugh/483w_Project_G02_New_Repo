@@ -10,9 +10,7 @@ export default function Dashboard() {
   const [filter, setFilter] = useState('all')
 
   useEffect(() => {
-    // Load once on mount
-    setSessions(getSessions())
-    // No subscriptions yet; if we add a storage listener later, update here.
+    getSessions().then(setSessions)
   }, [])
 
   const filtered = filter === 'all'

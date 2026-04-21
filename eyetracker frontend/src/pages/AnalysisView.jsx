@@ -785,25 +785,40 @@ export default function AnalysisView() {
   const [activeStimIdx, setActiveStimIdx] = useState(0)
 
   useEffect(() => {
-    const s = getSessionById(id)
-    if (s) {
-      setSession(s)
-      setStimuli(getStimuliForSession(id))
-      const gaz = getGazSummary(id)
-      if (gaz) setGazSummary(gaz)
-    } else {
-      setNotFound(true)
+    async function load() {
+      const s = await getSessionById(id)
+      if (s) {
+        setSession(s)
+        setStimuli(await getStimuliForSession(id))
+        const gaz = await getGazSummary(id)
+        if (gaz) setGazSummary(gaz)
+      } else {
+        setNotFound(true)
+      }
     }
+    load()
   }, [id])
+
   useEffect(() => {
     if (session && session.csv_uploaded && !session.analysis_viewed) {
-      const updated = updateSession(id, { analysis_viewed: true, analysis_viewed_at: new Date().toISOString() })
-      if (updated) setSession(updated)
+      updateSession(id, { analysis_viewed: true, analysis_viewed_at: new Date().toISOString() })
+        .then(updated => { if (updated) setSession(updated) })
     }
   }, [session, id])
 
-  const gazePoints    = gazSummary?.gaze_points ?? []
   const activeStimulus = stimuli[activeStimIdx] ?? null
+
+  // When per-stimulus data exists, use that stimulus's gaze/stats.
+  // Fall back to the global summary for sessions with no media column.
+  const displayGazSummary = useMemo(() => {
+    if (!gazSummary) return null
+    if (!activeStimulus) return gazSummary
+    const perStim = gazSummary?.per_stimulus?.[activeStimulus.stimulus_id]
+    if (!perStim) return gazSummary
+    return { ...gazSummary, ...perStim }
+  }, [gazSummary, activeStimulus])
+
+  const gazePoints = displayGazSummary?.gaze_points ?? []
 
   if (notFound) return (
     <div className="layout">
@@ -834,9 +849,14 @@ export default function AnalysisView() {
       </header>
 
       <main className="page">
-        <button className="back-link" onClick={() => navigate(`/sessions/${id}`)}>
-          Back to session
-        </button>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+          <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => navigate(`/sessions/${id}`)}>
+            ← Back to session
+          </button>
+          <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => navigate('/')}>
+            ⌂ Dashboard
+          </button>
+        </div>
 
         <div className="page-header">
           <div>
@@ -884,9 +904,9 @@ export default function AnalysisView() {
         <div style={{ animation: 'fadeUp 0.2s ease both' }} key={activeTab}>
           {activeTab === 'heatmap'  && <HeatmapView  gazePoints={gazePoints} stimulus={activeStimulus} />}
           {activeTab === 'scanpath' && <ScanpathView gazePoints={gazePoints} stimulus={activeStimulus} />}
-          {activeTab === 'fixation' && <FixationView gazePoints={gazePoints} gazSummary={gazSummary} stimulus={activeStimulus} />}
+          {activeTab === 'fixation' && <FixationView gazePoints={gazePoints} gazSummary={displayGazSummary} stimulus={activeStimulus} />}
           {activeTab === 'aoi'      && <AOIView      gazePoints={gazePoints} stimulus={activeStimulus} />}
-          {activeTab === 'summary'  && <SummaryView  gazSummary={gazSummary} gazePoints={gazePoints} sessionName={session.task_name} />}
+          {activeTab === 'summary'  && <SummaryView  gazSummary={displayGazSummary} gazePoints={gazePoints} sessionName={session.task_name} />}
         </div>
 
       </main>

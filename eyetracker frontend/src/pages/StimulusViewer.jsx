@@ -40,13 +40,16 @@ export default function StimulusViewer() {
   const [statusMsg, setStatusMsg] = useState('')
 
   useEffect(() => {
-    const s = getSessionById(id)
-    if (s) {
-      setSession(s)
-      setStimuli(getStimuliForSession(id))
-    } else {
-      setNotFound(true)
+    async function load() {
+      const s = await getSessionById(id)
+      if (s) {
+        setSession(s)
+        setStimuli(await getStimuliForSession(id))
+      } else {
+        setNotFound(true)
+      }
     }
+    load()
   }, [id])
 
   useEffect(() => {
@@ -77,30 +80,49 @@ export default function StimulusViewer() {
 
     const reader = new FileReader()
     reader.onload = () => {
-      const src = reader.result
       const img = new Image()
 
-      img.onload = () => {
+      img.onload = async () => {
+        // Compress + resize before storing in Firestore (1 MB doc limit).
+        // Cap at 640px on the long edge, JPEG at 60% quality (~30–60 KB result).
+        const MAX_DIM = 640
+        const scale = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.round(img.naturalWidth  * scale)
+        const h = Math.round(img.naturalHeight * scale)
+
+        const canvas = document.createElement('canvas')
+        canvas.width  = w
+        canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        const compressed = canvas.toDataURL('image/jpeg', 0.60)
+
         const stimulus = {
           stimulus_id: generateStimulusId(id),
           session_id: id,
           type: 'image',
           name: file.name,
-          src,
+          src: compressed,
           width: img.naturalWidth,
           height: img.naturalHeight,
           size_kb: Math.round(file.size / 1024),
           created_at: new Date().toISOString(),
         }
 
-        saveStimulus(stimulus)
-        const list = getStimuliForSession(id)
+        try {
+          await saveStimulus(stimulus)
+        } catch {
+          setStatusMsg('Failed to save — check your connection and try again.')
+          setIsProcessing(false)
+          e.target.value = ''
+          return
+        }
+        const list = await getStimuliForSession(id)
         setStimuli(list)
-      setActiveIndex(list.length - 1)
-      setStatusMsg('Image added to session')
-      showToast('Stimulus added')
-      setIsProcessing(false)
-      e.target.value = ''
+        setActiveIndex(list.length - 1)
+        setStatusMsg('Image added to session')
+        showToast('Stimulus added')
+        setIsProcessing(false)
+        e.target.value = ''
       }
 
       img.onerror = () => {
@@ -109,7 +131,7 @@ export default function StimulusViewer() {
         e.target.value = ''
       }
 
-      img.src = src
+      img.src = reader.result
     }
 
     reader.onerror = () => {
@@ -127,15 +149,15 @@ export default function StimulusViewer() {
     setIsProcessing(true)
     setStatusMsg('Reading code file...')
     const reader = new FileReader()
-    reader.onload = () => {
-      addCodeStimulus(file.name, reader.result)
+    reader.onload = async () => {
+      await addCodeStimulus(file.name, reader.result)
       e.target.value = ''
       setIsProcessing(false)
     }
     reader.readAsText(file)
   }
 
-  const addCodeStimulus = (name, text) => {
+  const addCodeStimulus = async (name, text) => {
     if (!text.trim()) return
     const lines = text.split(/\r?\n/)
     const stimulus = {
@@ -148,17 +170,17 @@ export default function StimulusViewer() {
       line_count: lines.length,
       created_at: new Date().toISOString(),
     }
-    saveStimulus(stimulus)
-    const list = getStimuliForSession(id)
+    await saveStimulus(stimulus)
+    const list = await getStimuliForSession(id)
     setStimuli(list)
     setSnippetText('')
     setStatusMsg('Code snippet added')
     showToast('Stimulus added')
   }
 
-  const handleDelete = stimulusId => {
-    deleteStimulus(stimulusId)
-    const list = getStimuliForSession(id)
+  const handleDelete = async stimulusId => {
+    await deleteStimulus(stimulusId)
+    const list = await getStimuliForSession(id)
     setStimuli(list)
     setActiveIndex(0)
     setStatusMsg('Stimulus removed')

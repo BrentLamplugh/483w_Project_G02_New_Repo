@@ -52,16 +52,19 @@ export default function SessionDetail() {
   const [stimuli, setStimuli] = useState([])
 
   useEffect(() => {
-    const s = getSessionById(id)
-    if (s) {
-      setSession(s)
-      const stims = getStimuliForSession(id)
-      setStimuli(stims)
-      setStimuliCount(stims.length)
-      setGazSummary(getGazSummary(id))
-    } else {
-      setNotFound(true)
+    async function load() {
+      const s = await getSessionById(id)
+      if (s) {
+        setSession(s)
+        const stims = await getStimuliForSession(id)
+        setStimuli(stims)
+        setStimuliCount(stims.length)
+        setGazSummary(await getGazSummary(id))
+      } else {
+        setNotFound(true)
+      }
     }
+    load()
   }, [id])
 
   const hasStimuli = stimuliCount > 0 || session?.stimulus_loaded
@@ -76,21 +79,23 @@ export default function SessionDetail() {
     return `/sessions/${id}/analysis`
   }
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (confirm(`Delete session ${id}? This cannot be undone.`)) {
-      deleteSession(id)
+      await deleteStimuliForSession(id)
+      await deleteGazSummary(id)
+      await deleteSession(id)
       navigate('/')
     }
   }
 
-  const handleResetSessionData = () => {
+  const handleResetSessionData = async () => {
     if (!confirm('Reset session data for this session? This will remove uploaded stimuli and CSV analysis results.')) {
       return
     }
 
-    deleteStimuliForSession(id)
-    deleteGazSummary(id)
-    const updated = updateSession(id, {
+    await deleteStimuliForSession(id)
+    await deleteGazSummary(id)
+    const updated = await updateSession(id, {
       stimulus_loaded: false,
       stimuli_count: 0,
       csv_uploaded: false,
@@ -140,8 +145,8 @@ export default function SessionDetail() {
       </header>
 
       <main className="page">
-        <button className="back-link" onClick={() => navigate('/')}>
-          Back to dashboard
+        <button className="btn btn-ghost" style={{ fontSize: 12, marginBottom: 24 }} onClick={() => navigate('/')}>
+          ← Dashboard
         </button>
 
         <div className="page-header">
