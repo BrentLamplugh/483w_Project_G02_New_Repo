@@ -6,6 +6,127 @@ import { getStimuliForSession } from '../store/stimuli'
 import { getGazSummary } from '../store/gazdata'
 import { format } from 'date-fns'
 
+function slugifyPart(value, fallback = 'item') {
+  if (!value) return fallback
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || fallback
+}
+
+function buildExportFilename({ sessionId, stimulus, view }) {
+  const session = slugifyPart(sessionId, 'session')
+  const stim = slugifyPart(stimulus?.name || stimulus?.stimulus_id, 'stimulus')
+  const vis = slugifyPart(view, 'view')
+  return `${session}-${stim}-${vis}.png`
+}
+
+function downloadDataUrl(dataUrl, filename) {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
+async function drawStimulusBackground(ctx, stimulus, width, height, opacity = 1) {
+  ctx.fillStyle = '#0b0e14'
+  ctx.fillRect(0, 0, width, height)
+
+  if (stimulus?.type === 'image' && stimulus?.src) {
+    try {
+      const img = await loadImage(stimulus.src)
+      ctx.save()
+      ctx.globalAlpha = opacity
+      ctx.drawImage(img, 0, 0, width, height)
+      ctx.restore()
+      return
+    } catch {
+      return
+    }
+  }
+
+  if (stimulus?.type === 'code' && stimulus?.content) {
+    ctx.save()
+    ctx.globalAlpha = Math.min(opacity, 0.7)
+    ctx.fillStyle = '#8895b3'
+    ctx.font = '14px monospace'
+    const lineHeight = 20
+    const maxLines = Math.floor((height - 24) / lineHeight)
+    const lines = String(stimulus.content).split('\n').slice(0, maxLines)
+    lines.forEach((line, i) => {
+      ctx.fillText(line, 16, 24 + i * lineHeight, width - 32)
+    })
+    ctx.restore()
+  }
+}
+
+function svgToDataUrl(svgEl) {
+  const clone = svgEl.cloneNode(true)
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+  const raw = new XMLSerializer().serializeToString(clone)
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(raw)}`
+}
+
+async function exportSvgOverlayAsPng({
+  svgEl,
+  stimulus,
+  filename,
+  width = 1200,
+  height = 900,
+  stimulusOpacity = 0.55,
+}) {
+  if (!svgEl) return
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+
+  await drawStimulusBackground(ctx, stimulus, width, height, stimulusOpacity)
+
+  const svgDataUrl = svgToDataUrl(svgEl)
+  const svgImg = await loadImage(svgDataUrl)
+  ctx.drawImage(svgImg, 0, 0, width, height)
+
+  downloadDataUrl(canvas.toDataURL('image/png'), filename)
+}
+
+async function exportHeatmapAsPng({ heatmapCanvas, stimulus, filename, stimulusOpacity = 0.72 }) {
+  if (!heatmapCanvas) return
+  const width = heatmapCanvas.width
+  const height = heatmapCanvas.height
+
+  const out = document.createElement('canvas')
+  out.width = width
+  out.height = height
+  const ctx = out.getContext('2d')
+
+  await drawStimulusBackground(ctx, stimulus, width, height, stimulusOpacity)
+  ctx.drawImage(heatmapCanvas, 0, 0, width, height)
+
+  downloadDataUrl(out.toDataURL('image/png'), filename)
+}
+
+function ExportButton({ onClick, label = 'Save PNG' }) {
+  return (
+    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '6px 10px' }} onClick={onClick}>
+      {label}
+    </button>
+  )
+}
+
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
 /**
@@ -195,7 +316,7 @@ function TabBar({ tabs, active, onChange }) {
   )
 }
 
-function SvgOverlay({ stimulus, children, viewW = 1, viewH = 0.75 }) {
+function SvgOverlay({ stimulus, children, viewW = 1, viewH = 0.75, svgRef = null }) {
   return (
     <div style={{
       position: 'relative',
@@ -227,6 +348,7 @@ function SvgOverlay({ stimulus, children, viewW = 1, viewH = 0.75 }) {
         <div style={{ height: 340, background: '#0b0e14' }} />
       )}
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${viewW} ${viewH}`}
         width="100%"
         preserveAspectRatio="xMidYMid meet"
@@ -283,7 +405,7 @@ function StatMini({ label, value }) {
 // This produces a smooth, continuously-blended density field with no visible
 // grid cells or block artefacts.
 //
-function HeatmapView({ gazePoints, stimulus }) {
+function HeatmapView({ gazePoints, stimulus, sessionId }) {
   const canvasRef = useRef(null)
 
   // Internal resolution — high enough to stay sharp when scaled by CSS.
@@ -375,8 +497,20 @@ function HeatmapView({ gazePoints, stimulus }) {
 
   if (!gazePoints?.length) return <NoData label="No gaze points to display" />
 
+  const handleExport = async () => {
+    await exportHeatmapAsPng({
+      heatmapCanvas: canvasRef.current,
+      stimulus,
+      filename: buildExportFilename({ sessionId, stimulus, view: 'heatmap' }),
+      stimulusOpacity: 0.72,
+    })
+  }
+
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <ExportButton onClick={() => { void handleExport() }} label="Save Heatmap PNG" />
+      </div>
       {/* Stimulus + heatmap overlay */}
       <div style={{
         position: 'relative',
@@ -475,15 +609,27 @@ function HeatmapView({ gazePoints, stimulus }) {
 }
 
 // ── Scanpath ──────────────────────────────────────────────────────────────────
-function ScanpathView({ gazePoints, stimulus }) {
+function ScanpathView({ gazePoints, stimulus, sessionId }) {
+  const svgRef = useRef(null)
   const stops = useMemo(() => buildScanpath(gazePoints || []), [gazePoints])
   if (!stops.length) return <NoData label="No scanpath data" />
 
   const maxDwell = Math.max(...stops.map(s => s.dwell), 1)
+  const handleExport = async () => {
+    await exportSvgOverlayAsPng({
+      svgEl: svgRef.current,
+      stimulus,
+      filename: buildExportFilename({ sessionId, stimulus, view: 'scanpath' }),
+      stimulusOpacity: 0.55,
+    })
+  }
 
   return (
     <div>
-      <SvgOverlay stimulus={stimulus}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <ExportButton onClick={() => { void handleExport() }} label="Save Scanpath PNG" />
+      </div>
+      <SvgOverlay stimulus={stimulus} svgRef={svgRef}>
         {stops.map((stop, i) => {
           if (i === 0) return null
           const prev = stops[i - 1]
@@ -547,13 +693,26 @@ function ScanpathView({ gazePoints, stimulus }) {
 }
 
 // ── Fixation View ─────────────────────────────────────────────────────────────
-function FixationView({ gazePoints, gazSummary, stimulus }) {
+function FixationView({ gazePoints, gazSummary, stimulus, sessionId }) {
+  const svgRef = useRef(null)
   const fixations = useMemo(() => buildFixationPoints(gazePoints || []), [gazePoints])
   if (!fixations.length) return <NoData label="No fixation data" />
 
+  const handleExport = async () => {
+    await exportSvgOverlayAsPng({
+      svgEl: svgRef.current,
+      stimulus,
+      filename: buildExportFilename({ sessionId, stimulus, view: 'fixation' }),
+      stimulusOpacity: 0.55,
+    })
+  }
+
   return (
     <div>
-      <SvgOverlay stimulus={stimulus}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <ExportButton onClick={() => { void handleExport() }} label="Save Fixation PNG" />
+      </div>
+      <SvgOverlay stimulus={stimulus} svgRef={svgRef}>
         {fixations.map((f) => {
           const r = 0.008 + f.normDwell * 0.028
           const opacity = 0.45 + f.normDwell * 0.55
@@ -597,7 +756,8 @@ function FixationView({ gazePoints, gazSummary, stimulus }) {
 }
 
 // ── AOI View ──────────────────────────────────────────────────────────────────
-function AOIView({ gazePoints, stimulus }) {
+function AOIView({ gazePoints, stimulus, sessionId }) {
+  const svgRef = useRef(null)
   const [aois, setAois] = useState(null)
 
   useEffect(() => {
@@ -607,10 +767,21 @@ function AOIView({ gazePoints, stimulus }) {
   if (!aois) return <NoData label="No AOI data" />
 
   const totalFix = aois.reduce((s, a) => s + a.fixationCount, 0)
+  const handleExport = async () => {
+    await exportSvgOverlayAsPng({
+      svgEl: svgRef.current,
+      stimulus,
+      filename: buildExportFilename({ sessionId, stimulus, view: 'aoi' }),
+      stimulusOpacity: 0.55,
+    })
+  }
 
   return (
     <div>
-      <SvgOverlay stimulus={stimulus} viewW={1} viewH={0.75}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <ExportButton onClick={() => { void handleExport() }} label="Save AOI PNG" />
+      </div>
+      <SvgOverlay stimulus={stimulus} viewW={1} viewH={0.75} svgRef={svgRef}>
         {aois.map((aoi) => (
           <g key={aoi.id}>
             <rect
@@ -902,10 +1073,10 @@ export default function AnalysisView() {
         <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
 
         <div style={{ animation: 'fadeUp 0.2s ease both' }} key={activeTab}>
-          {activeTab === 'heatmap'  && <HeatmapView  gazePoints={gazePoints} stimulus={activeStimulus} />}
-          {activeTab === 'scanpath' && <ScanpathView gazePoints={gazePoints} stimulus={activeStimulus} />}
-          {activeTab === 'fixation' && <FixationView gazePoints={gazePoints} gazSummary={displayGazSummary} stimulus={activeStimulus} />}
-          {activeTab === 'aoi'      && <AOIView      gazePoints={gazePoints} stimulus={activeStimulus} />}
+          {activeTab === 'heatmap'  && <HeatmapView  gazePoints={gazePoints} stimulus={activeStimulus} sessionId={session.session_id} />}
+          {activeTab === 'scanpath' && <ScanpathView gazePoints={gazePoints} stimulus={activeStimulus} sessionId={session.session_id} />}
+          {activeTab === 'fixation' && <FixationView gazePoints={gazePoints} gazSummary={displayGazSummary} stimulus={activeStimulus} sessionId={session.session_id} />}
+          {activeTab === 'aoi'      && <AOIView      gazePoints={gazePoints} stimulus={activeStimulus} sessionId={session.session_id} />}
           {activeTab === 'summary'  && <SummaryView  gazSummary={displayGazSummary} gazePoints={gazePoints} sessionName={session.task_name} />}
         </div>
 
@@ -913,4 +1084,3 @@ export default function AnalysisView() {
     </div>
   )
 }
-
