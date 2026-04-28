@@ -177,7 +177,7 @@ export default function NewSession() {
           <div className="form-group">
             <label className="form-label">Stimulus Type</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              {['code', 'image', 'video'].map(type => (
+              {['code', 'image'].map(type => (
                 <button
                   key={type}
                   className={`btn ${form.stimulus_type === type ? 'btn-primary' : 'btn-ghost'}`}
