@@ -27,7 +27,7 @@ export default function Dashboard() {
     <div className="layout">
       <header className="topbar">
         <div className="topbar-dot" />
-        <span className="topbar-title">EyeTrack Research</span>
+        <span className="topbar-title">GazeScope</span>
         <span className="topbar-subtitle">/ session manager</span>
       </header>
 
