@@ -1,58 +1,81 @@
-# GP3HD EyeTracker MVP
+# GazeScope
 
-Local-first prototype to manage sessions, present stimuli (images/code), import GP3HD CSV exports, and preview parsed stats. Frontend (Vite/React) talks to a minimal Flask backend on `http://127.0.0.1:5000`.
+GazeScope is a local-first eye-tracking analysis tool for managing research sessions, presenting stimuli, importing GP3HD CSV exports, calculating gaze metrics, and generating visual outputs. The React frontend talks to a Flask backend on `http://127.0.0.1:5000`.
 
 ## What works
-- Phase 1: session creation/listing with auto IDs and metadata (stored in browser localStorage).
-- Phase 2: stimulus upload/viewer (images or code). Dedicated viewer page plus inline preview on the session page.
-- Phase 3: CSV upload to backend; CSV is parsed and stats/preview rows are shown in the session page.
-- Basic gaze stats returned: rows, duration, sample rate (approx), fixation/blink counts, pupil averages, detected columns, sampled gaze points, preview rows.
 
-Not yet implemented: Phase 4+ (heatmap, scanpath, AOI metrics, layman summary); backend returns placeholders for those.
+- Session creation/listing with auto IDs and metadata.
+- Stimulus upload and viewing for images or code.
+- GP3HD CSV upload and parsing through the Flask backend.
+- Automatic column detection for common gaze, fixation, blink, pupil, timestamp, and media/stimulus fields.
+- Basic gaze metrics including row count, session duration, approximate sample rate, fixation count, average fixation duration, blink count, average blink duration, and pupil averages.
+- Per-stimulus analysis when the CSV includes a media/stimulus column.
+- Heatmap visualization showing gaze density over the stimulus.
+- Scanpath visualization showing the order of eye movement through fixation stops.
+- Fixation view showing fixation points, with larger points representing longer dwell time.
+- Basic AOI view using four automatically generated screen quadrants with fixation count and estimated time per quadrant.
+- Plain-English summary of gaze behavior.
+- PNG export for heatmap, scanpath, fixation, and AOI views.
 
 ## Project layout
-```
+
+```text
 eyetracker frontend/    # React + Vite app
-eyetracker_backend/     # scratch notes (not used in runtime)
-app.py                  # Flask API (CSV upload/parse)
+eyetracker_backend/     # older parsing prototype and future-work notes
+app.py                  # Flask API for CSV upload and parsing
 package-lock.json       # legacy stub
 ```
 
 ## Prerequisites
+
 - Node 18+ and npm
 - Python 3.10+ with `pip`
 
-## Run the backend (Flask)
+## Run the backend
+
 ```powershell
 cd C:\Users\charl\Downloads\483w_Project_G02\483w_Project_G02_New_Repo
-python -m pip install flask
+python -m pip install -r requirements.txt
 python app.py
 ```
-Backend serves at `http://127.0.0.1:5000` (CORS enabled for the Vite dev server). Keep this terminal open.
 
-## Run the frontend (Vite/React)
+Backend serves at `http://127.0.0.1:5000`. Keep this terminal open while using the frontend.
+
+## Run the frontend
+
 ```powershell
 cd "C:\Users\charl\Downloads\483w_Project_G02\483w_Project_G02_New_Repo\eyetracker frontend"
 npm install
 npm run dev
 ```
-Open the printed URL (typically `http://localhost:5173`).
+
+Open the printed Vite URL, typically `http://localhost:5173`.
 
 ## Usage flow
-1. Dashboard → create a new session.
-2. Session page: click **Open Viewer** to add/view stimuli (image or code). An inline preview of the latest stimulus also appears on the session page.
-3. Export CSV from GP3HD software, then upload it in the session page. Parsed stats and preview rows show below the upload section.
 
-## Data storage (current MVP)
-- Sessions, stimuli, and parsed CSV summaries are stored in browser `localStorage` — per-browser and not shared.
-- Clearing `localStorage` removes all data. Future phases should persist to a real database/API.
+1. Dashboard: create a new session.
+2. Session page: open the viewer to add or view image/code stimuli.
+3. Export a CSV from GP3HD software and upload it on the session page.
+4. Open the analysis page to view heatmap, scanpath, fixation, AOI, and summary tabs.
+5. Export visualization views as PNG files when needed.
+
+## Data storage
+
+- Sessions, stimuli, and parsed CSV summaries are stored in browser `localStorage`.
+- Data is per-browser and is not shared across devices.
+- Clearing `localStorage` removes saved sessions, stimuli, and analysis summaries.
 
 ## API
-- `POST /upload` — multipart form field `file` (.csv). Returns JSON with stats, detected columns, gaze point sample, and preview rows.
 
-## Known gaps / next steps
-- Implement heatmap/scanpath/AOI calculations and return them from the backend.
-- Persist sessions/stimuli/summaries to a database instead of `localStorage`.
-- Add full-screen participant display mode and stimulus open/close logging.
-- Align gaze data to specific stimuli (needs stimulus metadata + timestamps).
+- `POST /upload` - multipart form field `file` (`.csv`). Returns JSON with metrics, detected columns, preview rows, gaze points, heatmap data, scanpath data, fixation map data, summary text, and per-stimulus results when available.
 
+## Visualization notes
+
+- Heatmaps use gaze-point density to show areas with higher visual attention.
+- Scanpaths group gaze points into fixation stops and connect them in sequence.
+- Fixation view uses point size to represent relative dwell time.
+- AOI view uses four automatic screen quadrants to compare fixation activity across the stimulus.
+
+## Project scope
+
+This version of GazeScope was completed as the semester project analysis tool. Data is stored locally in the browser, and AOI analysis is limited to automatic quadrant-based regions rather than custom researcher-drawn areas.
