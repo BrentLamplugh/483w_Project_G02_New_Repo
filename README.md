@@ -78,4 +78,4 @@ Open the printed Vite URL, typically `http://localhost:5173`.
 
 ## Project scope
 
-This version of GazeScope was completed as the semester project analysis tool. Data is stored locally in the browser, and AOI analysis is limited to automatic quadrant-based regions rather than custom researcher-drawn areas.
+This version of GazeScope was completed as the semester project analysis tool. Data is stored in a Firebase database, and AOI analysis is limited to automatic quadrant-based regions rather than custom researcher-drawn areas.
